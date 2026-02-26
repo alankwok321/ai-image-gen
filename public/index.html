@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI 圖片生成器</title>
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+
+  <!-- Top Bar -->
+  <header class="topbar">
+    <div class="topbar-left">
+      <span class="logo">🎨 AI 圖片生成器</span>
+    </div>
+    <div class="topbar-right">
+      <button class="btn-settings" id="settingsToggleBtn" onclick="toggleSettings()">⚙️ 設定</button>
+    </div>
+  </header>
+
+  <!-- Settings Panel (slide-down) -->
+  <div id="settingsPanel" class="settings-panel" style="display:none;">
+    <div class="settings-inner">
+      <div class="settings-header">
+        <h3>🔑 API 設定</h3>
+        <button class="btn-close" onclick="toggleSettings()">✕</button>
+      </div>
+
+      <div class="settings-body">
+        <div class="form-group">
+          <label for="settingsApiMode">API 模式</label>
+          <select id="settingsApiMode" onchange="onApiModeChange()">
+            <option value="chat">Chat Completions（Gemini / OpenRouter）</option>
+            <option value="images">Images API（DALL·E）</option>
+          </select>
+          <span class="form-hint" id="modeHint">使用 chat/completions 端點，模型回傳包含圖片的回應</span>
+        </div>
+
+        <div class="form-group">
+          <label for="settingsBaseUrl">API Base URL</label>
+          <input type="url" id="settingsBaseUrl" placeholder="https://openrouter.ai/api/v1" />
+          <span class="form-hint" id="baseUrlHint">留空則使用預設值（OpenRouter）</span>
+        </div>
+
+        <div class="form-group">
+          <label for="settingsApiKey">API Key</label>
+          <div class="input-with-toggle">
+            <input type="password" id="settingsApiKey" placeholder="sk-..." />
+            <button class="toggle-visibility" onclick="toggleKeyVisibility()" title="顯示/隱藏">
+              <span id="eyeIcon">👁️</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="settingsModel">預設模型</label>
+          <select id="settingsModel">
+            <option value="google/gemini-2.5-flash-preview:thinking">Gemini 2.5 Flash（圖片生成）</option>
+            <option value="google/gemini-2.5-pro-preview">Gemini 2.5 Pro</option>
+            <option value="dall-e-3">DALL·E 3（Images API）</option>
+          </select>
+          <div class="custom-model-row">
+            <input type="text" id="settingsCustomModel" placeholder="或輸入自訂模型名稱..." />
+            <button class="btn btn-small" onclick="applyCustomModel()">套用</button>
+          </div>
+        </div>
+
+        <div class="settings-actions">
+          <button class="btn btn-save" onclick="saveSettingsToLocal()">💾 儲存設定</button>
+          <button class="btn btn-test" onclick="testApiKey()">🧪 測試連線</button>
+          <button class="btn btn-danger" onclick="clearSettings()">🗑️ 清除設定</button>
+        </div>
+
+        <div id="settingsMsg" class="settings-msg"></div>
+        <div id="testResult" class="test-result" style="display:none;"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- API Key Status Banner -->
+  <div id="apiKeyBanner" class="api-key-banner banner-warn">
+    <div class="banner-content">
+      <span class="banner-icon">⚠️</span>
+      <span class="banner-text">尚未設定 API Key，請先點擊「設定」輸入你的 API Key</span>
+    </div>
+    <button class="banner-action" onclick="toggleSettings()">前往設定 →</button>
+  </div>
+
+  <!-- Main Content -->
+  <main class="gen-container">
+    <!-- Generator Panel -->
+    <section class="gen-panel">
+      <h2>生成圖片</h2>
+
+      <!-- Mode Toggle -->
+      <div class="mode-toggle">
+        <button class="mode-btn active" id="modeSingle" onclick="switchMode('single')">🖼️ 單張圖片</button>
+        <button class="mode-btn" id="modeAnimation" onclick="switchMode('animation')">🎬 動畫模式</button>
+      </div>
+
+      <!-- Single Image Mode -->
+      <div class="gen-form" id="singleMode">
+        <div class="form-group">
+          <label for="prompt">描述你想要的圖片</label>
+          <textarea id="prompt" rows="3" placeholder="例如：一隻穿著太空服的柴犬在月球上散步，賽博朋克風格"></textarea>
+        </div>
+        <div class="form-row">
+          <div class="form-group form-group-model">
+            <label for="model">模型</label>
+            <select id="model">
+              <option value="google/gemini-2.5-flash-preview:thinking">Gemini 2.5 Flash</option>
+              <option value="google/gemini-2.5-pro-preview">Gemini 2.5 Pro</option>
+              <option value="dall-e-3">DALL·E 3</option>
+            </select>
+          </div>
+          <div class="form-group form-group-resolution">
+            <label for="resolution">解析度</label>
+            <select id="resolution">
+              <option value="1k" selected>1K (1024×1024)</option>
+              <option value="2k">2K (2048×2048)</option>
+              <option value="4k">4K (4096×4096)</option>
+            </select>
+          </div>
+          <button class="btn btn-generate" id="generateBtn" onclick="generate()">
+            <span id="btnText">✨ 生成</span>
+            <span id="btnSpinner" class="spinner" style="display:none;"></span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Animation Mode -->
+      <div class="anim-form" id="animationMode" style="display:none;">
+        <div class="anim-scenes-header">
+          <label>場景列表</label>
+          <button class="btn btn-small btn-add-scene" onclick="addScene()">+ 新增場景</button>
+        </div>
+        <div id="sceneList" class="scene-list">
+          <!-- Scenes inserted here -->
+        </div>
+
+        <div class="anim-controls-bar">
+          <div class="form-group form-group-model">
+            <label for="animModel">模型</label>
+            <select id="animModel">
+              <option value="google/gemini-2.5-flash-preview:thinking">Gemini 2.5 Flash</option>
+              <option value="google/gemini-2.5-pro-preview">Gemini 2.5 Pro</option>
+              <option value="dall-e-3">DALL·E 3</option>
+            </select>
+          </div>
+          <div class="form-group form-group-resolution">
+            <label for="animResolution">解析度</label>
+            <select id="animResolution">
+              <option value="1k" selected>1K</option>
+              <option value="2k">2K</option>
+              <option value="4k">4K</option>
+            </select>
+          </div>
+          <div class="form-group fps-group">
+            <label for="fpsSlider">播放速度：<span id="fpsValue">2.0</span> FPS</label>
+            <input type="range" id="fpsSlider" min="0.5" max="5" step="0.5" value="2" oninput="updateFps(this.value)" />
+          </div>
+          <button class="btn btn-generate" id="animGenerateBtn" onclick="generateAnimation()">
+            <span id="animBtnText">🎬 生成動畫</span>
+            <span id="animBtnSpinner" class="spinner" style="display:none;"></span>
+          </button>
+        </div>
+
+        <!-- Animation Progress -->
+        <div id="animProgress" class="anim-progress" style="display:none;">
+          <div class="anim-progress-bar">
+            <div class="anim-progress-fill" id="animProgressFill"></div>
+          </div>
+          <p id="animProgressText" class="anim-progress-text">準備中...</p>
+          <div id="animPreviewStrip" class="anim-preview-strip"></div>
+        </div>
+
+        <!-- Animation Player -->
+        <div id="animPlayer" class="anim-player" style="display:none;">
+          <div class="anim-display">
+            <img id="animFrame" src="" alt="Animation frame" />
+            <div class="anim-frame-indicator" id="animFrameIndicator">1 / 1</div>
+          </div>
+          <div class="anim-player-controls">
+            <button class="btn btn-small" onclick="animPrev()" title="上一幀">⏮</button>
+            <button class="btn btn-small btn-play" id="animPlayBtn" onclick="animTogglePlay()" title="播放/暫停">⏸</button>
+            <button class="btn btn-small" onclick="animNext()" title="下一幀">⏭</button>
+            <div class="anim-speed-control">
+              <label>速度：<span id="playerFpsValue">2.0</span> FPS</label>
+              <input type="range" id="playerFpsSlider" min="0.5" max="5" step="0.5" value="2" oninput="updatePlayerFps(this.value)" />
+            </div>
+            <button class="btn btn-small btn-download" onclick="downloadAllImages()">⬇️ 下載全部圖片</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Result (Single Image) -->
+      <div id="resultArea" class="result-area" style="display:none;">
+        <div id="loadingIndicator" class="loading-indicator" style="display:none;">
+          <div class="loading-dots">
+            <span></span><span></span><span></span>
+          </div>
+          <p>正在生成圖片，請稍候...</p>
+        </div>
+        <div id="imageResult" style="display:none;">
+          <img id="generatedImage" src="" alt="Generated Image" />
+          <div class="image-actions">
+            <a id="downloadLink" href="" download="generated-image.png" class="btn btn-small">⬇️ 下載</a>
+            <button class="btn btn-small" onclick="copyImageUrl()">📋 複製連結</button>
+          </div>
+        </div>
+        <div id="errorResult" class="error-result" style="display:none;">
+          <p id="errorText"></p>
+        </div>
+      </div>
+    </section>
+
+    <!-- History Panel -->
+    <section class="history-panel">
+      <div class="history-header">
+        <h3>生成歷史</h3>
+        <button class="btn btn-small btn-clear-history" onclick="clearHistory()" title="清除所有歷史">🗑️ 清除</button>
+      </div>
+      <div id="historyList" class="history-list">
+        <p class="history-empty">還沒有生成過圖片</p>
+      </div>
+    </section>
+  </main>
+
+  <!-- JSZip for downloading all images -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <script src="/js/app.js"></script>
+  <script>
+    initApp();
+  </script>
+</body>
+</html>
