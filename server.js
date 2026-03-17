@@ -5,6 +5,24 @@ const path = require("path");
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+async function parseApiResponse(response) {
+  const rawText = await response.text();
+  try {
+    return { data: JSON.parse(rawText), rawText, isJson: true };
+  } catch {
+    return { data: null, rawText, isJson: false };
+  }
+}
+
+function summarizeNonJsonResponse(rawText) {
+  const compact = (rawText || "").replace(/\s+/g, " ").trim();
+  if (!compact) return "上游 API 回傳空內容，而不是 JSON";
+  if (compact.startsWith("<!DOCTYPE") || compact.startsWith("<html")) {
+    return "上游 API 回傳的是 HTML 頁面，不是 JSON。通常代表 API Base URL / 端點設錯，或打到了網站頁面而不是 API。";
+  }
+  return "上游 API 回傳非 JSON 內容：" + compact.slice(0, 220);
+}
+
 // Middleware
 app.use(express.json({ limit: "10mb" }));
 app.use(express.static(path.join(__dirname, "public")));
@@ -66,11 +84,22 @@ app.post("/api/generate", async (req, res) => {
               : resolution === "2k"
                 ? "2048x2048"
                 : "1024x1024",
-          response_format: "url",
         }),
       });
 
-      const data = await response.json();
+      const { data, rawText, isJson } = await parseApiResponse(response);
+
+      if (!isJson) {
+        return res.status(response.status || 502).json({
+          error: { message: summarizeNonJsonResponse(rawText) },
+          debug: {
+            apiMode,
+            baseUrl,
+            endpoint: url,
+            status: response.status,
+          },
+        });
+      }
 
       if (!response.ok) {
         const errMsg = data.error?.message || "API 錯誤 " + response.status;
@@ -118,7 +147,19 @@ app.post("/api/generate", async (req, res) => {
         }),
       });
 
-      const data = await response.json();
+      const { data, rawText, isJson } = await parseApiResponse(response);
+
+      if (!isJson) {
+        return res.status(response.status || 502).json({
+          error: { message: summarizeNonJsonResponse(rawText) },
+          debug: {
+            apiMode,
+            baseUrl,
+            endpoint: url,
+            status: response.status,
+          },
+        });
+      }
 
       if (!response.ok) {
         const errMsg =

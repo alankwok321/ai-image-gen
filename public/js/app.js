@@ -11,7 +11,15 @@ const STORAGE_KEYS = {
   apiBaseUrl: "aiImageGen_apiBaseUrl",
   apiModel: "aiImageGen_apiModel",
   apiMode: "aiImageGen_apiMode",
+  apiProfiles: "aiImageGen_apiProfiles",
   history: "aiImageGen_history",
+};
+
+const PROMPT_PRESETS = {
+  cinematic: "電影感構圖，戲劇化光影，超高細節，寫實質感，景深明確，色彩分級精緻",
+  anime: "高品質動漫風，細膩線條，柔和光影，角色設計完整，背景有層次，畫面乾淨",
+  product: "高端產品形象照，工作室燈光，乾淨背景，精準反射，廣告攝影風格，超清晰",
+  fantasy: "史詩奇幻概念藝術，宏大場景，魔法氛圍，體積光，細節豐富，構圖震撼"
 };
 
 function getSettings() {
@@ -29,6 +37,50 @@ function initApp() {
   renderHistory();
   initScenes();
   syncModelDropdowns();
+  updateProfileList();
+}
+
+let _toastTimer = null;
+
+function showToast(message) {
+  const el = document.getElementById("toast");
+  if (!el) return;
+  el.textContent = message;
+  el.classList.add("show");
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(() => el.classList.remove("show"), 2200);
+}
+
+function applyPromptPreset(key) {
+  const preset = PROMPT_PRESETS[key];
+  const promptEl = document.getElementById("prompt");
+  if (!preset || !promptEl) return;
+  const current = promptEl.value.trim();
+  promptEl.value = current ? `${current}，${preset}` : preset;
+  promptEl.focus();
+  showToast("已套用風格提示");
+}
+
+function fillRandomPrompt() {
+  const ideas = [
+    "一座漂浮在雲海上的未來城市，晨光穿透薄霧，電影感廣角構圖",
+    "極簡白色工作室中的高級耳機產品照，柔光與精準反射，商業廣告風格",
+    "霓虹雨夜中的機械武士站在巷口，賽博龐克氛圍，超細節",
+    "奇幻森林中的發光鹿群與古老神殿，體積光與薄霧，概念藝術風格",
+    "動漫風少女站在海邊月台，晚霞與列車燈光交錯，情緒感畫面"
+  ];
+  const promptEl = document.getElementById("prompt");
+  if (!promptEl) return;
+  promptEl.value = ideas[Math.floor(Math.random() * ideas.length)];
+  promptEl.focus();
+  showToast("已填入靈感提示");
+}
+
+function inferProviderPreset(settings) {
+  const base = (settings.apiBaseUrl || "").trim();
+  if (settings.apiMode === "images" && /openai\.com/i.test(base)) return "openai-images";
+  if ((settings.apiMode === "chat" && /openrouter\.ai/i.test(base)) || (!base && settings.apiMode === "chat")) return "openrouter-gemini";
+  return "custom";
 }
 
 function loadSettingsUI() {
@@ -36,9 +88,11 @@ function loadSettingsUI() {
   const modeEl = document.getElementById("settingsApiMode");
   const baseUrlEl = document.getElementById("settingsBaseUrl");
   const modelEl = document.getElementById("settingsModel");
+  const providerEl = document.getElementById("settingsProviderPreset");
 
   if (modeEl) modeEl.value = s.apiMode;
   if (baseUrlEl) baseUrlEl.value = s.apiBaseUrl;
+  if (providerEl) providerEl.value = inferProviderPreset(s);
 
   // If saved model matches a dropdown option, select it; otherwise leave default
   if (modelEl) {
@@ -56,17 +110,15 @@ function loadSettingsUI() {
 }
 
 function toggleSettings() {
-  const panel = document.getElementById("settingsPanel");
-  const btn = document.getElementById("settingsToggleBtn");
-  if (!panel) return;
+  toggleSidebarMobile();
+}
 
-  if (panel.style.display === "none") {
-    panel.style.display = "block";
-    if (btn) btn.classList.add("active");
-  } else {
-    panel.style.display = "none";
-    if (btn) btn.classList.remove("active");
-  }
+function toggleSidebarMobile() {
+  const sidebar = document.querySelector('.sidebar');
+  const btn = document.getElementById('settingsToggleBtn');
+  if (!sidebar) return;
+  sidebar.classList.toggle('open');
+  if (btn) btn.classList.toggle('active');
 }
 
 function saveSettingsToLocal() {
@@ -107,9 +159,11 @@ function saveSettingsToLocal() {
     msgEl.className = "settings-msg success";
     setTimeout(() => { msgEl.className = "settings-msg"; }, 3000);
   }
+  showToast("設定已儲存");
 
   updateBanner();
   syncModelDropdowns();
+  updateProfileList();
 }
 
 function clearSettings() {
@@ -133,8 +187,17 @@ function clearSettings() {
 async function testApiKey() {
   const s = getSettings();
   const keyEl = document.getElementById("settingsApiKey");
-  const testKey = keyEl?.value?.trim() || s.apiKey;
+  const modeEl = document.getElementById("settingsApiMode");
+  const baseUrlEl = document.getElementById("settingsBaseUrl");
+  const modelEl = document.getElementById("settingsModel");
+  const customModelEl = document.getElementById("settingsCustomModel");
   const resultEl = document.getElementById("testResult");
+
+  const testKey = keyEl?.value?.trim() || s.apiKey;
+  const apiMode = modeEl?.value || s.apiMode || "chat";
+  const apiBaseUrl = (baseUrlEl?.value?.trim() || s.apiBaseUrl || (apiMode === "images" ? "https://api.openai.com/v1" : "https://openrouter.ai/api/v1")).replace(/\/+$/, "");
+  const customModel = customModelEl?.value?.trim();
+  const apiModel = customModel || modelEl?.value || s.apiModel || (apiMode === "images" ? "dall-e-3" : "google/gemini-2.5-flash-preview:thinking");
 
   if (!testKey) {
     if (resultEl) {
@@ -151,19 +214,17 @@ async function testApiKey() {
     resultEl.className = "test-result testing";
   }
 
-  const baseUrl = (s.apiBaseUrl || "https://openrouter.ai/api/v1").replace(/\/+$/, "");
-
   try {
     const res = await fetch(API + "/api/generate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         prompt: "Hi, test",
-        model: s.apiModel,
+        model: apiModel,
         resolution: "1k",
         apiKey: testKey,
-        apiBaseUrl: baseUrl,
-        apiMode: s.apiMode,
+        apiBaseUrl,
+        apiMode,
       }),
     });
 
@@ -202,12 +263,98 @@ function toggleKeyVisibility() {
   }
 }
 
+function onProviderPresetChange() {
+  const providerEl = document.getElementById("settingsProviderPreset");
+  const modeEl = document.getElementById("settingsApiMode");
+  const baseUrlEl = document.getElementById("settingsBaseUrl");
+  const modelEl = document.getElementById("settingsModel");
+  const customModelEl = document.getElementById("settingsCustomModel");
+  if (!providerEl) return;
+
+  const preset = providerEl.value;
+  if (preset === "openrouter-gemini") {
+    if (modeEl) modeEl.value = "chat";
+    if (baseUrlEl) baseUrlEl.value = "https://openrouter.ai/api/v1";
+    if (modelEl) modelEl.value = "google/gemini-2.5-flash-preview:thinking";
+    if (customModelEl) customModelEl.value = "";
+  } else if (preset === "openai-images") {
+    if (modeEl) modeEl.value = "images";
+    if (baseUrlEl) baseUrlEl.value = "https://api.openai.com/v1";
+    if (modelEl) modelEl.value = "dall-e-3";
+    if (customModelEl) customModelEl.value = "";
+  }
+  onApiModeChange();
+}
+
+function getProfiles() {
+  try {
+    return JSON.parse(localStorage.getItem(STORAGE_KEYS.apiProfiles) || "{}");
+  } catch {
+    return {};
+  }
+}
+
+function updateProfileList() {
+  const select = document.getElementById("savedProfiles");
+  if (!select) return;
+  const profiles = getProfiles();
+  const names = Object.keys(profiles).sort();
+  select.innerHTML = '<option value="">-- 選擇已儲存的設定 --</option>' + names.map(name => `<option value="${escapeAttr(name)}">${escapeHtml(name)}</option>`).join("");
+}
+
+function saveProfile() {
+  const name = prompt("設定名稱？");
+  if (!name || !name.trim()) return;
+  saveSettingsToLocal();
+  const s = getSettings();
+  const profiles = getProfiles();
+  profiles[name.trim()] = {
+    apiBaseUrl: s.apiBaseUrl,
+    apiModel: s.apiModel,
+    apiMode: s.apiMode,
+    providerPreset: inferProviderPreset(s),
+  };
+  localStorage.setItem(STORAGE_KEYS.apiProfiles, JSON.stringify(profiles));
+  updateProfileList();
+  const select = document.getElementById("savedProfiles");
+  if (select) select.value = name.trim();
+}
+
+function loadProfile() {
+  const select = document.getElementById("savedProfiles");
+  if (!select?.value) return;
+  const profile = getProfiles()[select.value];
+  if (!profile) return;
+  document.getElementById("settingsApiMode").value = profile.apiMode || "chat";
+  document.getElementById("settingsBaseUrl").value = profile.apiBaseUrl || "";
+  const providerEl = document.getElementById("settingsProviderPreset");
+  if (providerEl) providerEl.value = profile.providerPreset || inferProviderPreset(profile);
+  const modelEl = document.getElementById("settingsModel");
+  const customModelEl = document.getElementById("settingsCustomModel");
+  const opts = Array.from(modelEl.options).map(o => o.value);
+  if (opts.includes(profile.apiModel)) {
+    modelEl.value = profile.apiModel;
+    if (customModelEl) customModelEl.value = "";
+  } else if (customModelEl) {
+    customModelEl.value = profile.apiModel || "";
+  }
+  onApiModeChange();
+}
+
+function deleteProfile() {
+  const select = document.getElementById("savedProfiles");
+  if (!select?.value) return;
+  const profiles = getProfiles();
+  delete profiles[select.value];
+  localStorage.setItem(STORAGE_KEYS.apiProfiles, JSON.stringify(profiles));
+  updateProfileList();
+}
+
 function onApiModeChange() {
   const modeEl = document.getElementById("settingsApiMode");
   const modeHint = document.getElementById("modeHint");
   const baseUrlHint = document.getElementById("baseUrlHint");
   const baseUrlEl = document.getElementById("settingsBaseUrl");
-  const modelEl = document.getElementById("settingsModel");
 
   if (!modeEl) return;
   const mode = modeEl.value;
@@ -348,6 +495,38 @@ function buildRequestBody(prompt, model, resolution) {
   };
 }
 
+function getDownloadFilenameFromUrl(url, promptText) {
+  const baseName = promptToFilename(promptText || "generated-image").replace(/\.[a-z0-9]+$/i, "");
+  const mimeMatch = url && url.match(/^data:image\/(png|jpeg|jpg|webp|gif)/i);
+  const ext = mimeMatch ? mimeMatch[1].replace("jpeg", "jpg") : "png";
+  return `${baseName}.${ext}`;
+}
+
+function openImageModal(url, promptText) {
+  const modal = document.getElementById("imageModal");
+  const img = document.getElementById("imageModalImg");
+  const download = document.getElementById("imageModalDownload");
+  if (!modal || !img || !download || !url) return;
+  img.src = url;
+  download.href = url;
+  download.download = getDownloadFilenameFromUrl(url, promptText);
+  modal.classList.add("active");
+  modal.setAttribute("aria-hidden", "false");
+}
+
+function openImageModalFromCurrent() {
+  const img = document.getElementById("generatedImage");
+  const promptEl = document.getElementById("prompt");
+  if (img?.src) openImageModal(img.src, promptEl?.value || "generated-image");
+}
+
+function closeImageModal() {
+  const modal = document.getElementById("imageModal");
+  if (!modal) return;
+  modal.classList.remove("active");
+  modal.setAttribute("aria-hidden", "true");
+}
+
 async function generate() {
   if (_generating) return;
 
@@ -415,7 +594,7 @@ async function generate() {
       if (img) img.src = url;
       if (dl) {
         dl.href = url;
-        dl.download = promptToFilename(prompt);
+        dl.download = getDownloadFilenameFromUrl(url, prompt);
       }
       if (imageResult) imageResult.style.display = "block";
 
@@ -430,6 +609,7 @@ async function generate() {
       });
       saveHistoryData(history);
       renderHistory();
+      showToast("圖片生成完成");
     } else {
       const errMsg = data.error?.message || data.raw_content || "未能生成圖片";
       if (errorResult) {
@@ -490,7 +670,7 @@ function showHistoryImage(url, promptText) {
   if (img) img.src = url;
   if (dl) {
     dl.href = url;
-    dl.download = promptToFilename(promptText || "generated-image");
+    dl.download = getDownloadFilenameFromUrl(url, promptText || "generated-image");
   }
   if (resultArea) resultArea.style.display = "block";
   if (imageResult) imageResult.style.display = "block";
@@ -502,22 +682,27 @@ function clearHistory() {
   if (!confirm("確定要清除所有生成歷史嗎？")) return;
   localStorage.removeItem(STORAGE_KEYS.history);
   renderHistory();
+  showToast("已清除歷史紀錄");
 }
 
 function copyImageUrl() {
   const img = document.getElementById("generatedImage");
   if (img && img.src) {
     navigator.clipboard.writeText(img.src).then(() => {
-      // Brief visual feedback
       const btn = event?.target;
       if (btn) {
         const orig = btn.textContent;
         btn.textContent = "✅ 已複製";
         setTimeout(() => { btn.textContent = orig; }, 1500);
       }
+      showToast("已複製圖片連結");
     }).catch(() => {});
   }
 }
+
+window.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") closeImageModal();
+});
 
 // ══════════════════════════════════════════════
 //  ANIMATION MODE
@@ -596,11 +781,13 @@ function sceneDragOver(event) {
 
 function sceneDrop(event, targetIndex) {
   event.preventDefault();
+  document.querySelectorAll('.scene-item').forEach((el) => el.classList.remove('dragging'));
   if (_dragSceneIndex === null || _dragSceneIndex === targetIndex) return;
   const moved = scenes.splice(_dragSceneIndex, 1)[0];
   scenes.splice(targetIndex, 0, moved);
   _dragSceneIndex = null;
   renderScenes();
+  showToast('已重新排序場景');
 }
 
 function updateFps(value) {
@@ -799,6 +986,10 @@ function animNext() {
 function animGoToFrame(index) {
   showFrame(index);
 }
+
+document.addEventListener('dragend', () => {
+  document.querySelectorAll('.scene-item').forEach((el) => el.classList.remove('dragging'));
+});
 
 // ── Download All Images (ZIP) ──────────────
 
