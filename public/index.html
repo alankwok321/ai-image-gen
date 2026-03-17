@@ -188,6 +188,34 @@
                 <label>場景列表</label>
                 <button class="btn btn-small btn-add-scene" onclick="addScene()">+ 新增場景</button>
               </div>
+
+              <div class="auto-scene-builder">
+                <div class="auto-scene-header">
+                  <strong>✨ 自動分鏡</strong>
+                  <span class="form-hint">輸入一段故事/概念 → 自動生成多個場景描述（可再手動微調）</span>
+                </div>
+                <div class="form-group">
+                  <label for="autoStoryPrompt">故事/概念</label>
+                  <textarea id="autoStoryPrompt" rows="3" placeholder="例如：一隻貓穿越魔法森林，從迷路到找到回家的路"></textarea>
+                </div>
+                <div class="auto-scene-row">
+                  <div class="form-group">
+                    <label for="autoSceneCount">場景數</label>
+                    <select id="autoSceneCount">
+                      <option value="2">2</option>
+                      <option value="3">3</option>
+                      <option value="4">4</option>
+                      <option value="5" selected>5</option>
+                      <option value="6">6</option>
+                      <option value="7">7</option>
+                      <option value="8">8</option>
+                    </select>
+                  </div>
+                  <button class="btn btn-small" type="button" onclick="buildAutoScenes()">生成場景列表</button>
+                  <button class="btn btn-small btn-test" type="button" onclick="buildAutoScenes(true)">生成並開始</button>
+                </div>
+              </div>
+
               <div id="sceneList" class="scene-list"></div>
 
               <div class="anim-controls-bar">

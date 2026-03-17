@@ -38,6 +38,7 @@ function initApp() {
   initScenes();
   syncModelDropdowns();
   updateProfileList();
+  bindAutoScenes();
 }
 
 let _toastTimer = null;
@@ -705,8 +706,20 @@ window.addEventListener("keydown", (e) => {
 });
 
 // ══════════════════════════════════════════════
-//  ANIMATION MODE
+//  ANIMATION MODE + AUTO SCENE BUILDER
 // ══════════════════════════════════════════════
+
+// Scene narrative beats (ported from image-gen)
+const SCENE_BEATS = [
+  "establishing shot, wide angle, setting the scene",
+  "introduction of the main subject, medium shot",
+  "rising action, building tension or interest",
+  "climactic moment, dramatic composition",
+  "development and detail, close-up perspective",
+  "turning point, shift in mood or atmosphere",
+  "resolution beginning, pulling back",
+  "final scene, satisfying conclusion, wide shot",
+];
 
 let scenes = [];
 let animFrames = [];
@@ -721,6 +734,59 @@ function initScenes() {
     scenes = [{ prompt: "" }, { prompt: "" }];
   }
   renderScenes();
+}
+
+function bindAutoScenes() {
+  const storyEl = document.getElementById("autoStoryPrompt");
+  if (!storyEl) return; // UI not present
+
+  // Ctrl/Cmd+Enter: generate scene list
+  storyEl.addEventListener("keydown", (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+      buildAutoScenes(false);
+    }
+  });
+}
+
+function pickBeat(i, total) {
+  const idx = Math.floor((i / Math.max(total, 1)) * SCENE_BEATS.length);
+  return SCENE_BEATS[Math.min(idx, SCENE_BEATS.length - 1)];
+}
+
+function buildScenesFromStoryText(story, count) {
+  const clean = (story || "").trim();
+  const total = Math.min(Math.max(parseInt(count) || 5, 2), 8);
+  const out = [];
+  for (let i = 0; i < total; i++) {
+    const beat = pickBeat(i, total);
+    out.push({ prompt: `Scene ${i + 1} of ${total}: ${clean} — ${beat}` });
+  }
+  return out;
+}
+
+function buildAutoScenes(startAfterBuild = false) {
+  const storyEl = document.getElementById("autoStoryPrompt");
+  const countEl = document.getElementById("autoSceneCount");
+  if (!storyEl || !countEl) return;
+
+  const story = storyEl.value.trim();
+  if (!story) {
+    alert("請先輸入故事/概念");
+    storyEl.focus();
+    return;
+  }
+
+  scenes = buildScenesFromStoryText(story, countEl.value);
+  renderScenes();
+  showToast("已生成場景列表，可再手動微調");
+
+  // Scroll to the scene list for convenience
+  const list = document.getElementById("sceneList");
+  if (list) list.scrollIntoView({ behavior: "smooth", block: "start" });
+
+  if (startAfterBuild) {
+    generateAnimation();
+  }
 }
 
 function renderScenes() {
